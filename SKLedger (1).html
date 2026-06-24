@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="theme-color" content="#0F2A5C"/>
+<title>SK Ledger</title>
+<style>
+:root{
+  --navy:#0F2A5C;--navy2:#1565C0;
+  --green:#16A34A;--green2:#DCFCE7;
+  --red:#DC2626;--red2:#FEE2E2;
+  --amber:#D97706;--amber2:#FEF3C7;
+  --bg:#F1F5F9;--card:#FFFFFF;
+  --text:#1E293B;--muted:#64748B;--border:#E2E8F0;
+  --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);overflow:hidden;}
+#app{display:flex;flex-direction:column;height:100%;}
+
+/* TOPBAR */
+.topbar{background:var(--navy);color:#fff;padding:12px 16px 10px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.topbar-title{font-size:17px;font-weight:700;}
+.topbar-sub{font-size:11px;opacity:0.65;margin-top:1px;}
+.topbar-date{font-size:12px;opacity:0.75;text-align:right;line-height:1.5;}
+
+/* PAGES */
+.pages{flex:1;overflow:hidden;position:relative;}
+.page{position:absolute;inset:0;overflow-y:auto;padding:12px 12px 88px;display:none;-webkit-overflow-scrolling:touch;}
+.page.active{display:block;}
+
+/* BOTTOM NAV */
+.botnav{display:flex;background:#fff;border-top:1px solid var(--border);flex-shrink:0;padding-bottom:env(safe-area-inset-bottom);}
+.botnav-btn{flex:1;display:flex;flex-direction:column;align-items:center;padding:10px 0 8px;cursor:pointer;border:none;background:none;color:var(--muted);font-size:10px;font-weight:600;gap:3px;letter-spacing:0.3px;transition:color .15s;}
+.botnav-btn.active{color:var(--navy2);}
+.botnav-btn svg{width:22px;height:22px;}
+
+/* TICKER */
+.ticker{background:var(--navy);color:#fff;margin-bottom:12px;border-radius:var(--radius);padding:16px;position:relative;overflow:hidden;}
+.ticker::before{content:'';position:absolute;right:-20px;top:-20px;width:110px;height:110px;border-radius:50%;background:rgba(255,255,255,0.05);}
+.ticker-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;opacity:0.6;margin-bottom:4px;}
+.ticker-amount{font-size:38px;font-weight:800;line-height:1;letter-spacing:-1px;}
+.ticker-amount.profit{color:#86EFAC;}
+.ticker-amount.loss{color:#FCA5A5;}
+.ticker-row{display:flex;gap:12px;margin-top:12px;}
+.ticker-pill{flex:1;background:rgba(255,255,255,0.1);border-radius:10px;padding:8px 10px;}
+.ticker-pill .lbl{font-size:10px;opacity:0.65;margin-bottom:2px;}
+.ticker-pill .val{font-size:16px;font-weight:700;}
+.ticker-pill .val.g{color:#86EFAC;}
+.ticker-pill .val.r{color:#FCA5A5;}
+
+/* CARDS */
+.card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.07);}
+.card-title{font-size:11px;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted);font-weight:700;margin-bottom:12px;}
+
+/* TYPE TOGGLE */
+.type-toggle{display:flex;background:var(--bg);border-radius:10px;padding:3px;gap:3px;margin-bottom:14px;}
+.type-btn{flex:1;padding:10px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;background:none;color:var(--muted);}
+.type-btn.in.active{background:var(--green);color:#fff;}
+.type-btn.exp.active{background:var(--red);color:#fff;}
+
+/* INPUTS */
+.inp-wrap{margin-bottom:12px;}
+.inp-label{font-size:12px;font-weight:600;color:var(--muted);margin-bottom:5px;display:block;}
+.inp{width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;background:#fff;color:var(--text);outline:none;transition:border-color .15s;-webkit-appearance:none;}
+.inp:focus{border-color:var(--navy2);}
+.inp.amount{font-size:24px;font-weight:700;letter-spacing:-0.5px;}
+
+/* BUTTONS */
+.btn{width:100%;padding:15px;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .15s;}
+.btn:active{opacity:0.8;}
+.btn:disabled{opacity:0.5;cursor:not-allowed;}
+.btn-green{background:var(--green);color:#fff;}
+.btn-red{background:var(--red);color:#fff;}
+.btn-navy{background:var(--navy);color:#fff;}
+
+/* SMS SECTION */
+.sms-card{background:var(--amber2);border:1.5px solid #FCD34D;border-radius:var(--radius);padding:14px;margin-bottom:12px;}
+.sms-card-title{font-size:12px;font-weight:700;color:var(--amber);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;}
+.sms-row{display:flex;gap:8px;}
+.sms-btn{flex:1;padding:11px 8px;border:1.5px solid var(--amber);border-radius:10px;background:#fff;color:var(--amber);font-size:12px;font-weight:700;cursor:pointer;text-align:center;}
+.sms-btn:active{background:var(--amber);color:#fff;}
+
+/* STATUS */
+.status-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+.status-pill.ok{background:var(--green2);color:var(--green);}
+.status-pill.err{background:var(--red2);color:var(--red);}
+.status-pill.loading{background:#EFF6FF;color:var(--navy2);}
+
+/* ENTRY LIST */
+.entry-item{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);}
+.entry-item:last-child{border-bottom:none;}
+.entry-dot{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
+.entry-dot.in{background:var(--green2);}
+.entry-dot.exp{background:var(--red2);}
+.entry-info{flex:1;min-width:0;}
+.entry-note{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.entry-time{font-size:11px;color:var(--muted);margin-top:1px;}
+.entry-amt{font-size:15px;font-weight:800;flex-shrink:0;}
+.entry-amt.in{color:var(--green);}
+.entry-amt.exp{color:var(--red);}
+.empty-state{text-align:center;padding:32px 0;color:var(--muted);}
+.empty-state .icon{font-size:40px;margin-bottom:8px;}
+.empty-state p{font-size:13px;}
+
+/* HISTORY */
+.day-group{margin-bottom:12px;}
+.day-header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--navy);color:#fff;border-radius:10px 10px 0 0;font-size:12px;font-weight:700;}
+.day-body{background:var(--card);border-radius:0 0 10px 10px;padding:0 12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);}
+
+/* REPORT */
+.report-banner{border-radius:var(--radius);padding:20px;text-align:center;margin-bottom:12px;}
+.report-banner .lbl{font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;}
+.report-banner .amt{font-size:42px;font-weight:900;letter-spacing:-1.5px;line-height:1;}
+.report-banner .margin{font-size:13px;margin-top:6px;font-weight:600;}
+.report-banner.profit{background:var(--green2);color:var(--green);}
+.report-banner.loss{background:var(--red2);color:var(--red);}
+.stat-row{display:flex;gap:8px;margin-bottom:12px;}
+.stat-box{flex:1;background:var(--card);border-radius:12px;padding:12px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.06);}
+.stat-box .s-lbl{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;}
+.stat-box .s-val{font-size:18px;font-weight:800;}
+.month-wrap{position:relative;margin-bottom:12px;}
+.month-wrap::after{content:'▾';position:absolute;right:14px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--muted);}
+.month-sel{width:100%;padding:11px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-weight:600;background:#fff;color:var(--text);-webkit-appearance:none;appearance:none;}
+
+/* TABLE */
+.pl-table{width:100%;border-collapse:collapse;font-size:13px;}
+.pl-table th{background:#EFF6FF;color:var(--navy);font-size:10px;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;text-align:left;font-weight:700;}
+.pl-table th.r{text-align:right;}
+.pl-table td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.pl-table td.r{text-align:right;font-weight:700;}
+.pl-table tr:last-child td{border-bottom:none;}
+.pl-table .total-row td{background:#EFF6FF;font-weight:800;color:var(--navy);}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;}
+.badge.in{background:var(--green2);color:var(--green);}
+.badge.exp{background:var(--red2);color:var(--red);}
+
+/* SPINNER */
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* TOAST */
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#1E293B;color:#fff;padding:10px 20px;border-radius:30px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;max-width:90vw;}
+.toast.show{opacity:1;}
+
+@media print{
+  .topbar,.botnav,.month-wrap,.report-actions,.sms-card{display:none!important;}
+  .page{display:block!important;overflow:visible;padding:0;}
+  body{overflow:auto;}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div>
+      <div class="topbar-title">📦 SK Ledger</div>
+      <div class="topbar-sub">Sri Krishna Traders · Bahadurpura</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="topbar-date" id="topDate"></div>
+      <div id="syncStatus" style="margin-top:4px;"></div>
+    </div>
+  </div>
+
+  <div class="pages">
+
+    <!-- ═══ HOME ═══ -->
+    <div class="page active" id="page-home">
+
+      <div class="ticker">
+        <div class="ticker-label">Today's Net Profit</div>
+        <div class="ticker-amount profit" id="tickerNet">₹0</div>
+        <div class="ticker-row">
+          <div class="ticker-pill"><div class="lbl">💰 Cash In</div><div class="val g" id="tickerIn">₹0</div></div>
+          <div class="ticker-pill"><div class="lbl">💸 Expenses</div><div class="val r" id="tickerExp">₹0</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Add Entry</div>
+        <div class="type-toggle">
+          <button class="type-btn in active" id="btnIn" onclick="setType('IN')">💰 Cash In</button>
+          <button class="type-btn exp" id="btnExp" onclick="setType('EXPENSE')">💸 Expense</button>
+        </div>
+        <div class="inp-wrap">
+          <label class="inp-label">Amount (₹)</label>
+          <input class="inp amount" id="inpAmount" type="number" inputmode="decimal" placeholder="0"/>
+        </div>
+        <div class="inp-wrap">
+          <label class="inp-label">Description (optional)</label>
+          <input class="inp" id="inpNote" type="text" placeholder="e.g. DTDC booking, rent, fuel..."/>
+        </div>
+        <button class="btn btn-green" id="saveBtn" onclick="saveEntry()">✅ Save Entry to Google Sheet</button>
+      </div>
+
+      <!-- SMS — manual only, no auto send -->
+      <div class="sms-card">
+        <div class="sms-card-title">📲 Send SMS Alert to Vishnu</div>
+        <div class="sms-row">
+          <button class="sms-btn" onclick="sendDaySMS()">📤 Day Summary</button>
+          <button class="sms-btn" onclick="sendMonthSMS()">📊 Month Summary</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div class="card-title" style="margin-bottom:0;">Today's Entries</div>
+          <button onclick="loadToday()" style="background:none;border:none;color:var(--navy2);font-size:12px;font-weight:600;cursor:pointer;">↻ Refresh</button>
+        </div>
+        <div id="todayList"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></div>
+      </div>
+    </div>
+
+    <!-- ═══ HISTORY ═══ -->
+    <div class="page" id="page-history">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div class="card-title" style="margin-bottom:0;padding:4px 0;">Entry History</div>
+        <button onclick="loadHistory()" style="background:none;border:none;color:var(--navy2);font-size:12px;font-weight:600;cursor:pointer;">↻ Refresh</button>
+      </div>
+      <div id="historyList"><div class="empty-state"><div class="icon">📅</div><p>Loading...</p></div></div>
+    </div>
+
+    <!-- ═══ REPORT ═══ -->
+    <div class="page" id="page-report">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div class="card-title" style="margin-bottom:0;padding:4px 0;">P&amp;L Report</div>
+        <button onclick="refreshReport()" style="background:none;border:none;color:var(--navy2);font-size:12px;font-weight:600;cursor:pointer;">↻ Refresh</button>
+      </div>
+      <div class="month-wrap">
+        <select class="month-sel" id="monthSel" onchange="renderReport()"></select>
+      </div>
+      <div id="reportBanner" class="report-banner profit">
+        <div class="lbl">Net Profit / Loss</div>
+        <div class="amt" id="rptNet">₹0</div>
+        <div class="margin" id="rptMargin">—</div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-box"><div class="s-lbl">💰 Income</div><div class="s-val" style="color:var(--green)" id="rptIn">₹0</div></div>
+        <div class="stat-box"><div class="s-lbl">💸 Expenses</div><div class="s-val" style="color:var(--red)" id="rptExp">₹0</div></div>
+        <div class="stat-box"><div class="s-lbl">📅 Days</div><div class="s-val" style="color:var(--navy)" id="rptDays">0</div></div>
+      </div>
+      <div class="report-actions sms-row" style="margin-bottom:12px;">
+        <button class="sms-btn" onclick="sendReportSMS()" style="border-color:var(--navy);color:var(--navy);">📤 SMS Report</button>
+        <button class="sms-btn" onclick="window.print()" style="border-color:var(--navy);color:var(--navy);">🖨 Print / PDF</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Day-Wise Breakdown</div>
+        <div style="overflow-x:auto;">
+          <table class="pl-table">
+            <thead><tr><th>Date</th><th class="r">Income</th><th class="r">Expense</th><th class="r">Net</th></tr></thead>
+            <tbody id="dayTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">All Transactions</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px;">To delete an entry, open the <a href="https://docs.google.com/spreadsheets/d/1XhZTjnbh_QzUmVJ2qmsc2G-1TwVENbosRcx2xxDf2pc/edit" target="_blank" style="color:var(--navy2);font-weight:600;">Google Sheet</a> and delete the row directly.</p>
+        <div style="overflow-x:auto;">
+          <table class="pl-table">
+            <thead><tr><th>Date</th><th>Type</th><th>Description</th><th class="r">Amount</th></tr></thead>
+            <tbody id="entryTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /pages -->
+
+  <nav class="botnav">
+    <button class="botnav-btn active" id="nav-home" onclick="showPage('home')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      HOME
+    </button>
+    <button class="botnav-btn" id="nav-history" onclick="showPage('history')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      HISTORY
+    </button>
+    <button class="botnav-btn" id="nav-report" onclick="showPage('report')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      P&amp;L
+    </button>
+  </nav>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  HARDCODED — no setup needed
+// ═══════════════════════════════════════════════
+const API_URL = 'https://script.google.com/macros/s/AKfycbzMw8oBqb4zNoy6n1JT5CCCWA5yLfusjQ1jZH3i2IGjXRtkqGAzuOEWPxovr6mKTj-I/exec';
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1XhZTjnbh_QzUmVJ2qmsc2G-1TwVENbosRcx2xxDf2pc/edit';
+const OWNER_NUMBER = '8919855159';
+
+let currentType = 'IN';
+let _cache = null;
+let _cacheTime = 0;
+
+// ── Helpers ──
+const pad = n => n < 10 ? '0'+n : ''+n;
+const today = () => { const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
+const nowTime = () => { const d=new Date(); return pad(d.getHours())+':'+pad(d.getMinutes()); };
+const fmt = n => '₹'+Number(n).toLocaleString('en-IN',{maximumFractionDigits:0});
+
+function fmtDate(s){
+  const [y,m,d]=s.split('-');
+  const mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const dt=new Date(+y,+m-1,+d);
+  return d+' '+mn[+m-1]+' ('+dn[dt.getDay()]+')';
+}
+function fmtMonth(s){
+  const [y,m]=s.split('-');
+  const mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return mn[+m-1]+' '+y;
+}
+function totals(arr){
+  let i=0,e=0;
+  arr.forEach(x=>{ if(x.type==='IN') i+=+x.amount; else e+=+x.amount; });
+  return {totalIn:i, totalExp:e, net:i-e};
+}
+function showToast(msg,dur=2800){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),dur);
+}
+function setSyncStatus(s){
+  const el=document.getElementById('syncStatus');
+  const map={
+    ok:'<span class="status-pill ok">✓ Synced</span>',
+    err:'<span class="status-pill err">✗ Offline</span>',
+    loading:'<span class="status-pill loading">⏳ Syncing…</span>'
+  };
+  el.innerHTML=map[s]||'';
+}
+
+// ── API via JSONP — only method that works with Apps Script cross-origin ──
+function jsonp(params) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'sk_cb_' + Date.now();
+    const script = document.createElement('script');
+    const timeout = setTimeout(() => {
+      delete window[cbName];
+      document.body.removeChild(script);
+      reject(new Error('Timeout'));
+    }, 15000);
+    window[cbName] = function(data) {
+      clearTimeout(timeout);
+      delete window[cbName];
+      document.body.removeChild(script);
+      resolve(data);
+    };
+    params.callback = cbName;
+    const qs = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
+    script.src = API_URL + '?' + qs;
+    script.onerror = () => { clearTimeout(timeout); reject(new Error('Script error')); };
+    document.body.appendChild(script);
+  });
+}
+
+async function fetchAllEntries(force=false){
+  const now=Date.now();
+  if(!force && _cache && (now-_cacheTime)<30000) return _cache;
+  setSyncStatus('loading');
+  try{
+    const data = await jsonp({ action:'getEntries' });
+    if(data.status==='ok'){
+      _cache = data.entries||[];
+      _cacheTime = Date.now();
+      setSyncStatus('ok');
+      return _cache;
+    }
+  } catch(e){ console.error('Fetch error:',e); }
+  setSyncStatus('err');
+  return _cache||[];
+}
+
+// ── Init ──
+function init(){
+  const d=new Date();
+  const dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  document.getElementById('topDate').innerHTML =
+    dn[d.getDay()]+', '+pad(d.getDate())+' '+mn[d.getMonth()]+'<br/>'+d.getFullYear();
+  loadToday();
+}
+
+// ── Navigation ──
+function showPage(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.botnav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.getElementById('nav-'+name).classList.add('active');
+  if(name==='history') loadHistory();
+  if(name==='report'){ refreshReport(); }
+}
+
+// ── Type Toggle ──
+function setType(t){
+  currentType=t;
+  document.getElementById('btnIn').classList.toggle('active',t==='IN');
+  document.getElementById('btnExp').classList.toggle('active',t==='EXPENSE');
+  const btn=document.getElementById('saveBtn');
+  btn.className='btn '+(t==='IN'?'btn-green':'btn-red');
+  btn.textContent=(t==='IN'?'✅':'💸')+' Save Entry to Google Sheet';
+}
+
+// ── Save Entry ──
+async function saveEntry(){
+  const amtVal=document.getElementById('inpAmount').value.trim();
+  const note=document.getElementById('inpNote').value.trim();
+
+  if(!amtVal||isNaN(amtVal)||+amtVal<=0){
+    document.getElementById('inpAmount').focus();
+    showToast('❌ Please enter a valid amount');
+    return;
+  }
+
+  const btn=document.getElementById('saveBtn');
+  btn.disabled=true;
+  btn.innerHTML='<span class="spinner"></span> Saving to Sheet...';
+
+  try{
+    const result = await jsonp({
+      action:'addEntry',
+      date:today(), time:nowTime(),
+      type:currentType,
+      amount:+amtVal,
+      note:note
+    });
+
+    if(result.status==='ok'){
+      document.getElementById('inpAmount').value='';
+      document.getElementById('inpNote').value='';
+      _cache=null; // force fresh fetch
+      showToast('✅ Saved to Google Sheet!');
+      await loadToday();
+    } else {
+      showToast('❌ Error: '+(result.error||'Please try again'),4000);
+    }
+  } catch(e){
+    showToast('❌ Network error. Check internet connection.',4000);
+  }
+
+  btn.disabled=false;
+  setType(currentType); // restore button text
+}
+
+// ── Load Today ──
+async function loadToday(){
+  const all = await fetchAllEntries(true);
+  const te = all.filter(e=>String(e.date)===today()).reverse();
+  const {totalIn,totalExp,net} = totals(te);
+
+  document.getElementById('tickerIn').textContent=fmt(totalIn);
+  document.getElementById('tickerExp').textContent=fmt(totalExp);
+  const ne=document.getElementById('tickerNet');
+  ne.textContent=(net>=0?'':'-')+fmt(Math.abs(net));
+  ne.className='ticker-amount '+(net>=0?'profit':'loss');
+
+  const list=document.getElementById('todayList');
+  if(!te.length){
+    list.innerHTML='<div class="empty-state"><div class="icon">📋</div><p>No entries today.<br/>Add your first entry above.</p></div>';
+    return;
+  }
+  list.innerHTML=te.map(e=>`
+    <div class="entry-item">
+      <div class="entry-dot ${e.type==='IN'?'in':'exp'}">${e.type==='IN'?'💰':'💸'}</div>
+      <div class="entry-info">
+        <div class="entry-note">${e.note||(e.type==='IN'?'Cash In':'Expense')}</div>
+        <div class="entry-time">${e.time}</div>
+      </div>
+      <div class="entry-amt ${e.type==='IN'?'in':'exp'}">${e.type==='IN'?'+':'-'}${fmt(e.amount)}</div>
+    </div>`).join('');
+}
+
+// ── History ──
+async function loadHistory(){
+  document.getElementById('historyList').innerHTML='<div class="empty-state"><div class="icon">⏳</div><p>Loading from Google Sheet...</p></div>';
+  const all = await fetchAllEntries(true);
+  if(!all.length){
+    document.getElementById('historyList').innerHTML='<div class="empty-state"><div class="icon">📅</div><p>No entries found in Sheet</p></div>';
+    return;
+  }
+  const groups={};
+  all.forEach(e=>{
+    const d=String(e.date);
+    if(!groups[d]) groups[d]=[];
+    groups[d].push(e);
+  });
+  const dates=Object.keys(groups).sort().reverse();
+  let html='';
+  dates.forEach(date=>{
+    const de=groups[date].slice().reverse();
+    const {totalIn,totalExp,net}=totals(de);
+    const nc=net>=0?'#86EFAC':'#FCA5A5';
+    html+=`<div class="day-group">
+      <div class="day-header">
+        <span>${fmtDate(date)}</span>
+        <span style="color:${nc};font-size:13px;font-weight:800;">${net>=0?'+':''}${fmt(net)}</span>
+      </div>
+      <div class="day-body">
+        ${de.map(e=>`
+          <div class="entry-item">
+            <div class="entry-dot ${e.type==='IN'?'in':'exp'}">${e.type==='IN'?'💰':'💸'}</div>
+            <div class="entry-info">
+              <div class="entry-note">${e.note||(e.type==='IN'?'Cash In':'Expense')}</div>
+              <div class="entry-time">${e.time}</div>
+            </div>
+            <div class="entry-amt ${e.type==='IN'?'in':'exp'}">${e.type==='IN'?'+':'-'}${fmt(e.amount)}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  });
+  document.getElementById('historyList').innerHTML=html;
+}
+
+// ── Report ──
+async function refreshReport(){
+  _cache=null;
+  await fetchAllEntries(true);
+  populateMonthSelector();
+  renderReport();
+}
+
+function populateMonthSelector(){
+  if(!_cache) return;
+  const ms=new Set(_cache.map(e=>String(e.date).substring(0,7)));
+  ms.add(today().substring(0,7));
+  const months=Array.from(ms).sort().reverse();
+  const sel=document.getElementById('monthSel');
+  const cur=sel.value||months[0];
+  sel.innerHTML=months.map(m=>`<option value="${m}" ${m===cur?'selected':''}>${fmtMonth(m)}</option>`).join('');
+}
+
+function renderReport(){
+  const ym=document.getElementById('monthSel').value;
+  if(!ym) return;
+
+  const all=(_cache||[]).filter(e=>String(e.date).startsWith(ym));
+  const {totalIn,totalExp,net}=totals(all);
+  const ip=net>=0;
+
+  // Banner
+  document.getElementById('reportBanner').className='report-banner '+(ip?'profit':'loss');
+  document.getElementById('rptNet').textContent=(ip?'':'-')+fmt(Math.abs(net));
+  document.getElementById('rptIn').textContent=fmt(totalIn);
+  document.getElementById('rptExp').textContent=fmt(totalExp);
+  const margin=totalIn>0?((net/totalIn)*100).toFixed(1)+'%':'—';
+  document.getElementById('rptMargin').textContent=(ip?'Profit':'Loss')+' Margin: '+margin;
+
+  // Day map
+  const dm={};
+  all.forEach(e=>{
+    const d=String(e.date);
+    if(!dm[d]) dm[d]={in:0,exp:0};
+    if(e.type==='IN') dm[d].in+=+e.amount; else dm[d].exp+=+e.amount;
+  });
+  const dates=Object.keys(dm).sort();
+  document.getElementById('rptDays').textContent=dates.length;
+
+  // Day table
+  let dr='';
+  dates.forEach(d=>{
+    const di=dm[d].in, de=dm[d].exp, dn=di-de;
+    const col=dn>=0?'var(--green)':'var(--red)';
+    dr+=`<tr>
+      <td>${fmtDate(d)}</td>
+      <td class="r" style="color:var(--green)">${fmt(di)}</td>
+      <td class="r" style="color:var(--red)">${fmt(de)}</td>
+      <td class="r" style="color:${col}">${dn>=0?'+':''}${fmt(dn)}</td>
+    </tr>`;
+  });
+  dr+=`<tr class="total-row">
+    <td>TOTAL</td>
+    <td class="r">${fmt(totalIn)}</td>
+    <td class="r">${fmt(totalExp)}</td>
+    <td class="r" style="color:${ip?'var(--green)':'var(--red)'}">${ip?'+':''}${fmt(net)}</td>
+  </tr>`;
+  document.getElementById('dayTableBody').innerHTML = dr ||
+    '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;">No entries this month</td></tr>';
+
+  // Entry table
+  let er='';
+  all.slice().reverse().forEach(e=>{
+    const ii=e.type==='IN';
+    er+=`<tr>
+      <td style="white-space:nowrap">${fmtDate(String(e.date))}<br/><span style="font-size:10px;color:var(--muted)">${e.time}</span></td>
+      <td><span class="badge ${ii?'in':'exp'}">${ii?'In':'Exp'}</span></td>
+      <td style="color:var(--muted);font-size:12px">${e.note||'—'}</td>
+      <td class="r" style="color:${ii?'var(--green)':'var(--red)'}">${ii?'+':'-'}${fmt(e.amount)}</td>
+    </tr>`;
+  });
+  document.getElementById('entryTableBody').innerHTML = er ||
+    '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;">No entries this month</td></tr>';
+}
+
+// ── SMS (manual button only) ──
+function openSMS(msg){ window.location.href='sms:'+OWNER_NUMBER+'?body='+encodeURIComponent(msg); }
+
+function sendDaySMS(){
+  const e=(_cache||[]).filter(x=>String(x.date)===today());
+  const {totalIn,totalExp,net}=totals(e);
+  openSMS('SK Traders DAY SUMMARY | '+today()+
+    '\nTotal Cash In : Rs.'+Math.round(totalIn)+
+    '\nTotal Expenses: Rs.'+Math.round(totalExp)+
+    '\nNet Profit    : Rs.'+Math.round(net));
+}
+function sendMonthSMS(){
+  const ym=today().substring(0,7);
+  const e=(_cache||[]).filter(x=>String(x.date).startsWith(ym));
+  const {totalIn,totalExp,net}=totals(e);
+  openSMS('SK Traders MONTH SUMMARY | '+fmtMonth(ym)+
+    '\nTotal Cash In : Rs.'+Math.round(totalIn)+
+    '\nTotal Expenses: Rs.'+Math.round(totalExp)+
+    '\nNet Profit    : Rs.'+Math.round(net));
+}
+function sendReportSMS(){
+  const ym=document.getElementById('monthSel').value;
+  if(!ym) return;
+  const e=(_cache||[]).filter(x=>String(x.date).startsWith(ym));
+  const {totalIn,totalExp,net}=totals(e);
+  openSMS('SK Traders MONTH SUMMARY | '+fmtMonth(ym)+
+    '\nTotal Cash In : Rs.'+Math.round(totalIn)+
+    '\nTotal Expenses: Rs.'+Math.round(totalExp)+
+    '\nNet Profit    : Rs.'+Math.round(net));
+}
+
+init();
+</script>
+</body>
+</html>
