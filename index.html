@@ -102,6 +102,20 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Ro
 .entry-amt{font-size:15px;font-weight:800;flex-shrink:0;}
 .entry-amt.in{color:var(--green);}
 .entry-amt.exp{color:var(--red);}
+.entry-del{background:none;border:none;color:#CBD5E1;font-size:20px;cursor:pointer;padding:4px 6px;flex-shrink:0;line-height:1;}
+.entry-del:active{color:var(--red);}
+/* Duplicate dialog */
+.dup-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;}
+.dup-box{background:#fff;border-radius:16px;padding:24px;max-width:320px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
+.dup-title{font-size:16px;font-weight:800;color:var(--text);margin-bottom:8px;}
+.dup-msg{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:20px;}
+.dup-entry{background:var(--bg);border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:13px;}
+.dup-entry .de-row{display:flex;justify-content:space-between;align-items:center;}
+.dup-entry .de-label{color:var(--muted);font-size:11px;margin-bottom:2px;}
+.dup-btns{display:flex;gap:8px;}
+.dup-btn{flex:1;padding:12px;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;}
+.dup-btn.cancel{background:var(--bg);color:var(--muted);}
+.dup-btn.add{background:var(--navy);color:#fff;}
 .empty-state{text-align:center;padding:32px 0;color:var(--muted);}
 .empty-state .icon{font-size:40px;margin-bottom:8px;}
 .empty-state p{font-size:13px;}
@@ -421,6 +435,19 @@ async function saveEntry(){
     return;
   }
 
+  // ── Duplicate check: same type + amount + note within last 2 mins today ──
+  const recentEntries = (_cache||[]).filter(e=>e.date===today());
+  const lastTwo = recentEntries.slice(-2); // last 2 entries today
+  const dupEntry = lastTwo.find(e=>
+    e.type===currentType &&
+    Math.abs(+e.amount - +amtVal) < 0.01 &&
+    (e.note||'').trim().toLowerCase() === note.trim().toLowerCase()
+  );
+  if(dupEntry){
+    const proceed = await showDuplicateDialog(dupEntry, +amtVal, note, currentType);
+    if(!proceed) return; // user cancelled
+  }
+
   const btn=document.getElementById('saveBtn');
   btn.disabled=true;
   btn.innerHTML='<span class="spinner"></span> Saving to Sheet...';
@@ -476,6 +503,7 @@ async function loadToday(){
         <div class="entry-time">${e.time}</div>
       </div>
       <div class="entry-amt ${e.type==='IN'?'in':'exp'}">${e.type==='IN'?'+':'-'}${fmt(e.amount)}</div>
+      <button class="entry-del" onclick="deleteEntry('${e.id}')" title="Delete">🗑</button>
     </div>`).join('');
 }
 
@@ -629,6 +657,54 @@ function sendReportSMS(){
     '\nTotal Cash In : Rs.'+Math.round(totalIn)+
     '\nTotal Expenses: Rs.'+Math.round(totalExp)+
     '\nNet Profit    : Rs.'+Math.round(net));
+}
+
+// ── Delete Entry ──
+async function deleteEntry(id){
+  if(!confirm('Delete this entry?')) return;
+  showToast('🗑 Deleting...');
+  try{
+    const result = await jsonp({ action:'deleteEntry', id:id });
+    if(result.status==='ok'){
+      _cache=null;
+      showToast('✅ Entry deleted');
+      await loadToday();
+    } else {
+      showToast('❌ Delete failed: '+(result.error||'Try again'),4000);
+    }
+  } catch(e){
+    showToast('❌ Network error during delete',4000);
+  }
+}
+
+// ── Duplicate Dialog ──
+function showDuplicateDialog(existing, amount, note, type){
+  return new Promise(resolve=>{
+    const overlay = document.createElement('div');
+    overlay.className='dup-overlay';
+    const typeLabel = type==='IN'?'💰 Cash In':'💸 Expense';
+    const amtStr = fmt(amount);
+    overlay.innerHTML=`
+      <div class="dup-box">
+        <div class="dup-title">⚠️ Duplicate Entry?</div>
+        <div class="dup-msg">You just saved a similar entry a moment ago:</div>
+        <div class="dup-entry">
+          <div class="de-label">Previous entry at ${existing.time}</div>
+          <div class="de-row">
+            <span style="font-weight:700">${existing.note||typeLabel}</span>
+            <span style="font-weight:800;color:${type==='IN'?'var(--green)':'var(--red)'}">${amtStr}</span>
+          </div>
+        </div>
+        <div class="dup-msg">Is this a new entry or did you tap Save twice by mistake?</div>
+        <div class="dup-btns">
+          <button class="dup-btn cancel" id="dupCancel">✕ Cancel</button>
+          <button class="dup-btn add" id="dupAdd">✅ Yes, Add Again</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('dupCancel').onclick=()=>{ document.body.removeChild(overlay); resolve(false); };
+    document.getElementById('dupAdd').onclick=()=>{ document.body.removeChild(overlay); resolve(true); };
+  });
 }
 
 init();
