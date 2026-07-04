@@ -113,6 +113,11 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Ro
 .dup-entry .de-row{display:flex;justify-content:space-between;align-items:center;}
 .dup-entry .de-label{color:var(--muted);font-size:11px;margin-bottom:2px;}
 .dup-btns{display:flex;gap:8px;}
+.date-row{display:flex;align-items:center;gap:8px;margin-bottom:12px;}
+.date-toggle{background:none;border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;color:var(--navy2);cursor:pointer;white-space:nowrap;}
+.date-toggle:active{background:var(--navy2);color:#fff;}
+.inp-date{flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-weight:600;background:#fff;color:var(--text);outline:none;-webkit-appearance:none;}
+.inp-date:focus{border-color:var(--navy2);}
 .dup-btn{flex:1;padding:12px;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;}
 .dup-btn.cancel{background:var(--bg);color:var(--muted);}
 .dup-btn.add{background:var(--navy);color:#fff;}
@@ -209,6 +214,14 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Ro
         <div class="inp-wrap">
           <label class="inp-label">Description (optional)</label>
           <input class="inp" id="inpNote" type="text" placeholder="e.g. DTDC booking, rent, fuel..."/>
+        </div>
+        <div class="inp-wrap">
+          <label class="inp-label">Date <span id="dateLabel" style="color:var(--navy2);font-weight:700;"></span></label>
+          <div class="date-row">
+            <input class="inp-date" id="inpDate" type="date"/>
+            <button class="date-toggle" onclick="setEntryDate('today')">Today</button>
+            <button class="date-toggle" onclick="setEntryDate('yesterday')">Yesterday</button>
+          </div>
         </div>
         <button class="btn btn-green" id="saveBtn" onclick="saveEntry()">✅ Save Entry to Google Sheet</button>
       </div>
@@ -401,6 +414,16 @@ function init(){
   const mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   document.getElementById('topDate').innerHTML =
     dn[d.getDay()]+', '+pad(d.getDate())+' '+mn[d.getMonth()]+'<br/>'+d.getFullYear();
+
+  // Set date picker to today
+  setEntryDate('today');
+
+  // Listen for manual date change
+  document.getElementById('inpDate').addEventListener('change', function(){
+    const lbl = document.getElementById('dateLabel');
+    lbl.textContent = this.value === today() ? '(Today)' : '('+fmtDate(this.value)+')';
+  });
+
   loadToday();
 }
 
@@ -453,9 +476,10 @@ async function saveEntry(){
   btn.innerHTML='<span class="spinner"></span> Saving to Sheet...';
 
   try{
+    const entryDate = document.getElementById('inpDate').value || today();
     const result = await jsonp({
       action:'addEntry',
-      date:today(), time:nowTime(),
+      date:entryDate, time:nowTime(),
       type:currentType,
       amount:+amtVal,
       note:note
@@ -541,6 +565,7 @@ async function loadHistory(){
               <div class="entry-time">${e.time}</div>
             </div>
             <div class="entry-amt ${e.type==='IN'?'in':'exp'}">${e.type==='IN'?'+':'-'}${fmt(e.amount)}</div>
+            <button class="entry-del" onclick="deleteEntryFromHistory('${e.id}')" title="Delete">🗑</button>
           </div>`).join('')}
       </div>
     </div>`;
@@ -657,6 +682,38 @@ function sendReportSMS(){
     '\nTotal Cash In : Rs.'+Math.round(totalIn)+
     '\nTotal Expenses: Rs.'+Math.round(totalExp)+
     '\nNet Profit    : Rs.'+Math.round(net));
+}
+
+// ── Date Picker helpers ──
+function setEntryDate(when){
+  const inp = document.getElementById('inpDate');
+  const lbl = document.getElementById('dateLabel');
+  if(when==='today'){
+    inp.value = today();
+    lbl.textContent = '(Today)';
+  } else if(when==='yesterday'){
+    const d = new Date(); d.setDate(d.getDate()-1);
+    inp.value = d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+    lbl.textContent = '(Yesterday)';
+  }
+}
+
+// ── Delete Entry from History ──
+async function deleteEntryFromHistory(id){
+  if(!confirm('Delete this entry?')) return;
+  showToast('🗑 Deleting...');
+  try{
+    const result = await jsonp({ action:'deleteEntry', id:id });
+    if(result.status==='ok'){
+      _cache=null;
+      showToast('✅ Entry deleted');
+      await loadHistory();
+    } else {
+      showToast('❌ Delete failed: '+(result.error||'Try again'),4000);
+    }
+  } catch(e){
+    showToast('❌ Network error during delete',4000);
+  }
 }
 
 // ── Delete Entry ──
