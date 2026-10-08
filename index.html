@@ -866,41 +866,35 @@ function showDuplicateDialog(existing, amount, note, type){
   });
 }
 
-// ── PWA: Generate canvas icon ──
-function makePWAIcon(){
+// ── PWA: manifest + install prompt (no service worker — blob SW breaks PWA navigation) ──
+(function setupPWA(){
+  // Draw SK icon on canvas
   const c=document.createElement('canvas'); c.width=192; c.height=192;
   const x=c.getContext('2d');
   x.fillStyle='#0F2A5C'; x.fillRect(0,0,192,192);
-  x.fillStyle='#FFFFFF'; x.font='bold 100px serif';
+  // Rounded corners
+  x.fillStyle='#1565C0';
+  x.beginPath(); x.roundRect(20,20,152,152,24); x.fill();
+  x.fillStyle='#FFFFFF'; x.font='bold 88px system-ui,sans-serif';
   x.textAlign='center'; x.textBaseline='middle';
   x.fillText('SK',96,96);
-  return c.toDataURL('image/png');
-}
-
-(function setupPWA(){
-  const icon = makePWAIcon();
+  const icon = c.toDataURL('image/png');
   document.getElementById('pwa-icon').href = icon;
+
+  // Inline manifest as blob URL
   const manifest = {
     name:'SK Ledger', short_name:'SK Ledger',
     description:'Cash ledger for Sri Krishna Traders',
-    start_url:'./', display:'standalone',
+    start_url:location.href, display:'standalone',
     background_color:'#0F2A5C', theme_color:'#0F2A5C',
-    orientation:'portrait',
-    icons:[{src:icon,sizes:'192x192',type:'image/png'},{src:icon,sizes:'512x512',type:'image/png'}]
+    orientation:'portrait-primary',
+    icons:[
+      {src:icon,sizes:'192x192',type:'image/png',purpose:'any maskable'},
+      {src:icon,sizes:'512x512',type:'image/png',purpose:'any maskable'}
+    ]
   };
   const mBlob = new Blob([JSON.stringify(manifest)],{type:'application/manifest+json'});
   document.getElementById('pwa-manifest').href = URL.createObjectURL(mBlob);
-  const swCode = [
-    "const CACHE='sk-ledger-v1';",
-    "self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./'])));self.skipWaiting();});",
-    "self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));return self.clients.claim();});",
-    "self.addEventListener('fetch',e=>{if(!e.request.url.startsWith(self.location.origin))return;e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(nr=>{const cl=nr.clone();caches.open(CACHE).then(c=>c.put(e.request,cl));return nr;})));});"
-  ].join('\n');
-  const swBlob = new Blob([swCode],{type:'application/javascript'});
-  if('serviceWorker' in navigator){
-    navigator.serviceWorker.register(URL.createObjectURL(swBlob),{scope:'./'})
-      .catch(e=>console.log('SW:',e));
-  }
 })();
 
 let _deferredInstall=null;
