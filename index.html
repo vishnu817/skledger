@@ -346,4 +346,577 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Ro
 // ═══════════════════════════════════════════════
 //  HARDCODED — no setup needed
 // ═══════════════════════════════════════════════
-const API_URL = 'https://script.google.com/macros/s/AKfycbzMw8oBqb4zNoy6n1JT5CCCWA5yLfusjQ1jZH3i2IG
+const API_URL = 'https://script.google.com/macros/s/AKfycbzMw8oBqb4zNoy6n1JT5CCCWA5yLfusjQ1jZH3i2IGjXRtkqGAzuOEWPxovr6mKTj-I/exec';
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1XhZTjnbh_QzUmVJ2qmsc2G-1TwVENbosRcx2xxDf2pc/edit';
+const OWNER_NUMBER = '8919855159';
+const CACHE_KEY = 'skledger_cache';
+const CACHE_TTL = 120000; // 2 minutes
+
+let currentType = 'IN';
+let _cache = null;
+let _cacheTime = 0;
+let _saving = false; // prevent double-tap saves
+
+// ── Helpers ──
+const pad = n => n < 10 ? '0'+n : ''+n;
+const today = () => { const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
+const nowTime = () => { const d=new Date(); return pad(d.getHours())+':'+pad(d.getMinutes()); };
+const fmt = n => '₹'+Number(n).toLocaleString('en-IN',{maximumFractionDigits:0});
+
+// ── Persist cache to localStorage so page reload doesn't refetch ──
+function saveLocalCache(entries){
+  try{ localStorage.setItem(CACHE_KEY, JSON.stringify({t:Date.now(), e:entries})); }catch(e){}
+}
+function loadLocalCache(){
+  try{
+    const raw = localStorage.getItem(CACHE_KEY);
+    if(!raw) return null;
+    const obj = JSON.parse(raw);
+    if(Date.now() - obj.t < CACHE_TTL) return obj.e;
+  }catch(e){}
+  return null;
+}
+
+function fmtDate(s){
+  const [y,m,d]=s.split('-');
+  const mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const dt=new Date(+y,+m-1,+d);
+  return d+' '+mn[+m-1]+' ('+dn[dt.getDay()]+')';
+}
+function fmtMonth(s){
+  const [y,m]=s.split('-');
+  const mn=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return mn[+m-1]+' '+y;
+}
+function totals(arr){
+  let i=0,e=0;
+  arr.forEach(x=>{ if(x.type==='IN') i+=+x.amount; else e+=+x.amount; });
+  return {totalIn:i, totalExp:e, net:i-e};
+}
+function showToast(msg,dur=2800){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),dur);
+}
+function setSyncStatus(s){
+  const el=document.getElementById('syncStatus');
+  const map={
+    ok:'<span class="status-pill ok">&#x2713; Synced</span>',
+    err:'<span class="status-pill err">&#x2717; Offline</span>',
+    loading:'<span class="status-pill loading">&#x23F3; Syncing&#x2026;</span>'
+  };
+  el.innerHTML=map[s]||'';
+}
+
+// ── API via JSONP — only method that works with Apps Script cross-origin ──
+function jsonp(params, timeout=12000) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'sk_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+    const timer = setTimeout(() => {
+      delete window[cbName];
+      try{ document.body.removeChild(script); }catch(e){}
+      reject(new Error('Timeout'));
+    }, timeout);
+    window[cbName] = function(data) {
+      clearTimeout(timer);
+      delete window[cbName];
+      try{ document.body.removeChild(script); }catch(e){}
+      resolve(data);
+    };
+    params.callback = cbName;
+    const qs = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
+    script.src = API_URL + '?' + qs;
+    script.onerror = () => { clearTimeout(timer); delete window[cbName]; reject(new Error('Script error')); };
+    document.body.appendChild(script);
+  });
+}
+
+// ── Fetch all entries — use local cache first, then sync in background ──
+async function fetchAllEntries(force=false){
+  // Return local cache immediately if valid (fast path)
+  if(!force){
+    const local = loadLocalCache();
+    if(local){ _cache=local; return _cache; }
+  }
+  if(!force && _cache && (Date.now()-_cacheTime)<CACHE_TTL) return _cache;
+
+  setSyncStatus('loading');
+  try{
+    const data = await jsonp({ action:'getEntries' });
+    if(data.status==='ok'){
+      _cache = data.entries||[];
+      _cacheTime = Date.now();
+      saveLocalCache(_cache);
+      setSyncStatus('ok');
+      return _cache;
+    }
+  } catch(e){ console.error('Fetch error:',e); }
+  setSyncStatus('err');
+  return _cache||[];
+}
+
+// ── Background sync — refresh cache silently without blocking UI ──
+function bgSync(){
+  jsonp({ action:'getEntries' }).then(data=>{
+    if(data.status==='ok'){
+      _cache = data.entries||[];
+      _cacheTime = Date.now();
+      saveLocalCache(_cache);
+      setSyncStatus('ok');
+      // Silently refresh whichever page is visible
+      const activePage = document.querySelector('.page.active');
+      if(activePage){
+        if(activePage.id==='page-home') renderToday();
+        else if(activePage.id==='page-history') renderHistory();
+        else if(activePage.id==='page-report'){ populateMonthSelector(); renderReport(); }
+      }
+    }
+  }).catch(()=>setSyncStatus('err'));
+}
+
+// ── Init ──
+function init(){
+  const d=new Date();
+  const dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const mn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  document.getElementById('topDate').innerHTML =
+    dn[d.getDay()]+', '+pad(d.getDate())+' '+mn[d.getMonth()]+'<br/>'+d.getFullYear();
+
+  setEntryDate('today');
+  document.getElementById('inpDate').addEventListener('change', function(){
+    const lbl = document.getElementById('dateLabel');
+    lbl.textContent = this.value === today() ? '(Today)' : '('+fmtDate(this.value)+')';
+  });
+
+  // Load from local cache instantly, then sync in background
+  const local = loadLocalCache();
+  if(local){
+    _cache = local;
+    renderToday();
+    setSyncStatus('ok');
+    bgSync(); // refresh silently
+  } else {
+    // No local cache — must fetch first
+    fetchAllEntries(true).then(()=>{ renderToday(); });
+  }
+}
+
+// ── Navigation ──
+function showPage(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.botnav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.getElementById('nav-'+name).classList.add('active');
+  if(name==='history'){
+    if(_cache) renderHistory(); // show instantly from cache
+    loadHistory();              // then refresh from server
+  }
+  if(name==='report') loadReport();
+}
+
+// ── Type Toggle ──
+function setType(t){
+  currentType=t;
+  document.getElementById('btnIn').classList.toggle('active',t==='IN');
+  document.getElementById('btnExp').classList.toggle('active',t==='EXPENSE');
+  const btn=document.getElementById('saveBtn');
+  btn.className='btn '+(t==='IN'?'btn-green':'btn-red');
+  btn.textContent=(t==='IN'?'✅':'💸')+' Save Entry to Google Sheet';
+}
+
+// ── Save Entry — OPTIMISTIC: update UI immediately, sync in background ──
+async function saveEntry(){
+  if(_saving){ showToast('⏳ Please wait, saving...'); return; }
+
+  const amtVal=document.getElementById('inpAmount').value.trim();
+  const note=document.getElementById('inpNote').value.trim();
+
+  if(!amtVal||isNaN(amtVal)||+amtVal<=0){
+    document.getElementById('inpAmount').focus();
+    showToast('❌ Please enter a valid amount');
+    return;
+  }
+
+  const entryDate = document.getElementById('inpDate').value || today();
+
+  // ── Duplicate check against local cache ──
+  const recentEntries = (_cache||[]).filter(e=>e.date===entryDate);
+  const lastTwo = recentEntries.slice(-2);
+  const dupEntry = lastTwo.find(e=>
+    e.type===currentType &&
+    Math.abs(+e.amount - +amtVal) < 0.01 &&
+    (e.note||'').trim().toLowerCase() === note.trim().toLowerCase()
+  );
+  if(dupEntry){
+    const proceed = await showDuplicateDialog(dupEntry, +amtVal, note, currentType);
+    if(!proceed) return;
+  }
+
+  _saving = true;
+  const btn=document.getElementById('saveBtn');
+  btn.disabled=true;
+  btn.innerHTML='<span class="spinner"></span> Saving...';
+
+  // ── Optimistic: add to local cache immediately ──
+  const tempId = 'SK_TEMP_' + Date.now();
+  const tempEntry = {
+    id: tempId,
+    date: entryDate,
+    time: nowTime(),
+    type: currentType,
+    amount: +amtVal,
+    note: note,
+    ts: '',
+    _pending: true
+  };
+  if(!_cache) _cache=[];
+  _cache.push(tempEntry);
+  saveLocalCache(_cache);
+  renderToday(); // show immediately
+
+  // Clear form right away
+  document.getElementById('inpAmount').value='';
+  document.getElementById('inpNote').value='';
+  setEntryDate('today');
+
+  // ── Background: send to Sheet ──
+  try{
+    const result = await jsonp({
+      action:'addEntry',
+      date:entryDate, time:tempEntry.time,
+      type:currentType,
+      amount:+amtVal,
+      note:note
+    });
+
+    if(result.status==='ok'){
+      // Replace temp entry with real ID
+      const idx = _cache.findIndex(e=>e.id===tempId);
+      if(idx>=0){ _cache[idx].id=result.id; delete _cache[idx]._pending; }
+      saveLocalCache(_cache);
+      setSyncStatus('ok');
+      showToast('✅ Saved to Google Sheet!');
+    } else {
+      // Rollback temp entry
+      _cache = _cache.filter(e=>e.id!==tempId);
+      saveLocalCache(_cache);
+      renderToday();
+      showToast('❌ Save failed: '+(result.error||'Try again'),4000);
+    }
+  } catch(e){
+    // Keep optimistic entry but mark offline — will need manual refresh
+    setSyncStatus('err');
+    showToast('⚠️ Saved locally. Will sync when online.',4000);
+  }
+
+  _saving=false;
+  btn.disabled=false;
+  setType(currentType);
+}
+
+// ── Render Today (from cache, instant) ──
+function renderToday(){
+  const all = _cache||[];
+  const te = all.filter(e=>String(e.date)===today()).reverse();
+  const {totalIn,totalExp,net} = totals(te);
+
+  document.getElementById('tickerIn').textContent=fmt(totalIn);
+  document.getElementById('tickerExp').textContent=fmt(totalExp);
+  const ne=document.getElementById('tickerNet');
+  ne.textContent=(net>=0?'':'-')+fmt(Math.abs(net));
+  ne.className='ticker-amount '+(net>=0?'profit':'loss');
+
+  const list=document.getElementById('todayList');
+  if(!te.length){
+    list.innerHTML='<div class="empty-state"><div class="icon">📋</div><p>No entries today.<br/>Add your first entry above.</p></div>';
+    return;
+  }
+  list.innerHTML=te.map(e=>`
+    <div class="entry-item" id="ei-${e.id}">
+      <div class="entry-dot ${e.type==='IN'?'in':'exp'}">${e.type==='IN'?'💰':'💸'}</div>
+      <div class="entry-info">
+        <div class="entry-note">${e.note||(e.type==='IN'?'Cash In':'Expense')}${e._pending?' <span style="font-size:10px;color:var(--amber)">syncing...</span>':''}</div>
+        <div class="entry-time">${e.time}</div>
+      </div>
+      <div class="entry-amt ${e.type==='IN'?'in':'exp'}">${e.type==='IN'?'+':'-'}${fmt(e.amount)}</div>
+      <button class="entry-del" onclick="deleteEntry('${e.id}')" title="Delete">${e._pending?'':'🗑'}</button>
+    </div>`).join('');
+}
+
+// ── Load Today (force refresh from server) ──
+async function loadToday(){
+  await fetchAllEntries(true);
+  renderToday();
+}
+
+// ── Render History (from cache, instant) ──
+function renderHistory(){
+  const all = _cache||[];
+  if(!all.length){
+    document.getElementById('historyList').innerHTML='<div class="empty-state"><div class="icon">📅</div><p>No entries found</p></div>';
+    return;
+  }
+  const groups={};
+  all.forEach(e=>{
+    const d=String(e.date);
+    if(!groups[d]) groups[d]=[];
+    groups[d].push(e);
+  });
+  const dates=Object.keys(groups).sort().reverse();
+  let html='';
+  dates.forEach(date=>{
+    const de=groups[date].slice().reverse();
+    const {totalIn,totalExp,net}=totals(de);
+    const nc=net>=0?'#86EFAC':'#FCA5A5';
+    html+=`<div class="day-group">
+      <div class="day-header">
+        <span>${fmtDate(date)}</span>
+        <span style="color:${nc};font-size:13px;font-weight:800;">${net>=0?'+':''}${fmt(net)}</span>
+      </div>
+      <div class="day-body">
+        ${de.map(e=>`
+          <div class="entry-item">
+            <div class="entry-dot ${e.type==='IN'?'in':'exp'}">${e.type==='IN'?'💰':'💸'}</div>
+            <div class="entry-info">
+              <div class="entry-note">${e.note||(e.type==='IN'?'Cash In':'Expense')}</div>
+              <div class="entry-time">${e.time}</div>
+            </div>
+            <div class="entry-amt ${e.type==='IN'?'in':'exp'}">${e.type==='IN'?'+':'-'}${fmt(e.amount)}</div>
+            <button class="entry-del" onclick="deleteEntryFromHistory('${e.id}')" title="Delete">${e._pending?'':'🗑'}</button>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  });
+  document.getElementById('historyList').innerHTML=html;
+}
+
+// ── Load History (force refresh) ──
+async function loadHistory(){
+  if(!_cache) document.getElementById('historyList').innerHTML='<div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div>';
+  await fetchAllEntries(true);
+  renderHistory();
+}
+
+// ── Report ──
+async function refreshReport(){
+  await fetchAllEntries(true);
+  populateMonthSelector();
+  renderReport();
+}
+async function loadReport(){
+  if(_cache){ populateMonthSelector(); renderReport(); }
+  await fetchAllEntries(true);
+  populateMonthSelector();
+  renderReport();
+}
+
+function populateMonthSelector(){
+  if(!_cache) return;
+  const ms=new Set(_cache.map(e=>String(e.date).substring(0,7)));
+  ms.add(today().substring(0,7));
+  const months=Array.from(ms).sort().reverse();
+  const sel=document.getElementById('monthSel');
+  const cur=sel.value||months[0];
+  sel.innerHTML=months.map(m=>`<option value="${m}" ${m===cur?'selected':''}>${fmtMonth(m)}</option>`).join('');
+}
+
+function renderReport(){
+  const ym=document.getElementById('monthSel').value;
+  if(!ym) return;
+  const all=(_cache||[]).filter(e=>String(e.date).startsWith(ym));
+  const {totalIn,totalExp,net}=totals(all);
+  const ip=net>=0;
+  document.getElementById('reportBanner').className='report-banner '+(ip?'profit':'loss');
+  document.getElementById('rptNet').textContent=(ip?'':'-')+fmt(Math.abs(net));
+  document.getElementById('rptIn').textContent=fmt(totalIn);
+  document.getElementById('rptExp').textContent=fmt(totalExp);
+  const margin=totalIn>0?((net/totalIn)*100).toFixed(1)+'%':'—';
+  document.getElementById('rptMargin').textContent=(ip?'Profit':'Loss')+' Margin: '+margin;
+  const dm={};
+  all.forEach(e=>{
+    const d=String(e.date);
+    if(!dm[d]) dm[d]={in:0,exp:0};
+    if(e.type==='IN') dm[d].in+=+e.amount; else dm[d].exp+=+e.amount;
+  });
+  const dates=Object.keys(dm).sort();
+  document.getElementById('rptDays').textContent=dates.length;
+  let dr='';
+  dates.forEach(d=>{
+    const di=dm[d].in, de=dm[d].exp, dn=di-de;
+    const col=dn>=0?'var(--green)':'var(--red)';
+    dr+=`<tr>
+      <td>${fmtDate(d)}</td>
+      <td class="r" style="color:var(--green)">${fmt(di)}</td>
+      <td class="r" style="color:var(--red)">${fmt(de)}</td>
+      <td class="r" style="color:${col}">${dn>=0?'+':''}${fmt(dn)}</td>
+    </tr>`;
+  });
+  dr+=`<tr class="total-row">
+    <td>TOTAL</td>
+    <td class="r">${fmt(totalIn)}</td>
+    <td class="r">${fmt(totalExp)}</td>
+    <td class="r" style="color:${ip?'var(--green)':'var(--red)'}">${ip?'+':''}${fmt(net)}</td>
+  </tr>`;
+  document.getElementById('dayTableBody').innerHTML = dr ||
+    '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;">No entries this month</td></tr>';
+  let er='';
+  all.slice().reverse().forEach(e=>{
+    const ii=e.type==='IN';
+    er+=`<tr>
+      <td style="white-space:nowrap">${fmtDate(String(e.date))}<br/><span style="font-size:10px;color:var(--muted)">${e.time}</span></td>
+      <td><span class="badge ${ii?'in':'exp'}">${ii?'In':'Exp'}</span></td>
+      <td style="color:var(--muted);font-size:12px">${e.note||'—'}</td>
+      <td class="r" style="color:${ii?'var(--green)':'var(--red)'}">${ii?'+':'-'}${fmt(e.amount)}</td>
+    </tr>`;
+  });
+  document.getElementById('entryTableBody').innerHTML = er ||
+    '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;">No entries this month</td></tr>';
+}
+
+// ── SMS ──
+function openSMS(msg){ window.location.href='sms:'+OWNER_NUMBER+'?body='+encodeURIComponent(msg); }
+function sendDaySMS(){
+  const e=(_cache||[]).filter(x=>String(x.date)===today());
+  const {totalIn,totalExp,net}=totals(e);
+  openSMS('SK Traders DAY SUMMARY | '+today()+'\nTotal Cash In : Rs.'+Math.round(totalIn)+'\nTotal Expenses: Rs.'+Math.round(totalExp)+'\nNet Profit    : Rs.'+Math.round(net));
+}
+function sendMonthSMS(){
+  const ym=today().substring(0,7);
+  const e=(_cache||[]).filter(x=>String(x.date).startsWith(ym));
+  const {totalIn,totalExp,net}=totals(e);
+  openSMS('SK Traders MONTH SUMMARY | '+fmtMonth(ym)+'\nTotal Cash In : Rs.'+Math.round(totalIn)+'\nTotal Expenses: Rs.'+Math.round(totalExp)+'\nNet Profit    : Rs.'+Math.round(net));
+}
+function sendReportSMS(){
+  const ym=document.getElementById('monthSel').value;
+  if(!ym) return;
+  const e=(_cache||[]).filter(x=>String(x.date).startsWith(ym));
+  const {totalIn,totalExp,net}=totals(e);
+  openSMS('SK Traders MONTH SUMMARY | '+fmtMonth(ym)+'\nTotal Cash In : Rs.'+Math.round(totalIn)+'\nTotal Expenses: Rs.'+Math.round(totalExp)+'\nNet Profit    : Rs.'+Math.round(net));
+}
+
+// ── Date Picker helpers ──
+function setEntryDate(when){
+  const inp = document.getElementById('inpDate');
+  const lbl = document.getElementById('dateLabel');
+  if(when==='today'){
+    inp.value = today(); lbl.textContent = '(Today)';
+  } else if(when==='yesterday'){
+    const d = new Date(); d.setDate(d.getDate()-1);
+    inp.value = d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+    lbl.textContent = '(Yesterday)';
+  }
+}
+
+// ── Delete Entry ──
+async function deleteEntry(id){
+  if(id.startsWith('SK_TEMP_')){ showToast('⏳ Still syncing, please wait'); return; }
+  if(!confirm('Delete this entry?')) return;
+  // Optimistic remove
+  _cache = (_cache||[]).filter(e=>e.id!==id);
+  saveLocalCache(_cache);
+  renderToday();
+  showToast('🗑 Deleting...');
+  try{
+    await jsonp({ action:'deleteEntry', id:id });
+    setSyncStatus('ok');
+  } catch(e){ setSyncStatus('err'); showToast('⚠️ Delete may not have synced',4000); }
+}
+
+async function deleteEntryFromHistory(id){
+  if(id.startsWith('SK_TEMP_')){ showToast('⏳ Still syncing, please wait'); return; }
+  if(!confirm('Delete this entry?')) return;
+  _cache = (_cache||[]).filter(e=>e.id!==id);
+  saveLocalCache(_cache);
+  renderHistory();
+  showToast('🗑 Deleting...');
+  try{
+    await jsonp({ action:'deleteEntry', id:id });
+    setSyncStatus('ok');
+  } catch(e){ setSyncStatus('err'); showToast('⚠️ Delete may not have synced',4000); }
+}
+
+// ── Duplicate Dialog ──
+function showDuplicateDialog(existing, amount, note, type){
+  return new Promise(resolve=>{
+    const overlay = document.createElement('div');
+    overlay.className='dup-overlay';
+    const typeLabel = type==='IN'?'💰 Cash In':'💸 Expense';
+    overlay.innerHTML=`
+      <div class="dup-box">
+        <div class="dup-title">⚠️ Duplicate Entry?</div>
+        <div class="dup-msg">You just saved a similar entry:</div>
+        <div class="dup-entry">
+          <div class="de-label">Previous entry at ${existing.time}</div>
+          <div class="de-row">
+            <span style="font-weight:700">${existing.note||typeLabel}</span>
+            <span style="font-weight:800;color:${type==='IN'?'var(--green)':'var(--red)'}">${fmt(amount)}</span>
+          </div>
+        </div>
+        <div class="dup-msg">New entry or tapped Save twice by mistake?</div>
+        <div class="dup-btns">
+          <button class="dup-btn cancel" id="dupCancel">✕ Cancel</button>
+          <button class="dup-btn add" id="dupAdd">✅ Yes, Add Again</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('dupCancel').onclick=()=>{ document.body.removeChild(overlay); resolve(false); };
+    document.getElementById('dupAdd').onclick=()=>{ document.body.removeChild(overlay); resolve(true); };
+  });
+}
+
+// ── PWA: Generate canvas icon ──
+function makePWAIcon(){
+  const c=document.createElement('canvas'); c.width=192; c.height=192;
+  const x=c.getContext('2d');
+  x.fillStyle='#0F2A5C'; x.fillRect(0,0,192,192);
+  x.fillStyle='#FFFFFF'; x.font='bold 100px serif';
+  x.textAlign='center'; x.textBaseline='middle';
+  x.fillText('SK',96,96);
+  return c.toDataURL('image/png');
+}
+
+(function setupPWA(){
+  const icon = makePWAIcon();
+  document.getElementById('pwa-icon').href = icon;
+  const manifest = {
+    name:'SK Ledger', short_name:'SK Ledger',
+    description:'Cash ledger for Sri Krishna Traders',
+    start_url:'./', display:'standalone',
+    background_color:'#0F2A5C', theme_color:'#0F2A5C',
+    orientation:'portrait',
+    icons:[{src:icon,sizes:'192x192',type:'image/png'},{src:icon,sizes:'512x512',type:'image/png'}]
+  };
+  const mBlob = new Blob([JSON.stringify(manifest)],{type:'application/manifest+json'});
+  document.getElementById('pwa-manifest').href = URL.createObjectURL(mBlob);
+  const swCode = [
+    "const CACHE='sk-ledger-v1';",
+    "self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./'])));self.skipWaiting();});",
+    "self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));return self.clients.claim();});",
+    "self.addEventListener('fetch',e=>{if(!e.request.url.startsWith(self.location.origin))return;e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(nr=>{const cl=nr.clone();caches.open(CACHE).then(c=>c.put(e.request,cl));return nr;})));});"
+  ].join('\n');
+  const swBlob = new Blob([swCode],{type:'application/javascript'});
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register(URL.createObjectURL(swBlob),{scope:'./'})
+      .catch(e=>console.log('SW:',e));
+  }
+})();
+
+let _deferredInstall=null;
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault(); _deferredInstall=e;
+  if(!localStorage.getItem('pwa-dismissed'))
+    setTimeout(()=>document.getElementById('installBanner').classList.add('show'),1500);
+});
+window.addEventListener('appinstalled',()=>{
+  document.getElementById('installBanner').classList.remove('show');
+  showToast('App installed! Find SK Ledger on your home screen.');
+});
+function doInstall(){ document.getElementById('installBanner').classList.remove('show'); if(_deferredInstall){_deferredInstall.prompt();_deferredInstall=null;} }
+function dismissInstall(){ document.getElementById('installBanner').classList.remove('show'); try{localStorage.setItem('pwa-dismissed','1');}catch(e){} }
+
+init();
+</script>
+</body>
+</html>
